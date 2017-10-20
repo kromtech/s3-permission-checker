@@ -4,6 +4,10 @@ import sys
 
 from collections import defaultdict
 
+import boto3
+import botocore
+import requests
+import termcolor
 
 def check_acl(acl):
     dangerous_grants = defaultdict(list)
