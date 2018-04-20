@@ -50,6 +50,11 @@ python s3inspector.py
 Enter your AWS profile name [default]:
 ```
 
+### Install all libraries
+```
+pip install -r requirements.txt
+```
+
 ## Usage
 `python s3inspector.py`
 
