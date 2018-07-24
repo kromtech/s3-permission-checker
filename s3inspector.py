@@ -24,6 +24,8 @@ GROUPS_TO_CHECK = {
     "http://acs.amazonaws.com/groups/global/AuthenticatedUsers": "Authenticated AWS users"
 }
 
+global getInput
+getInput = input
 
 def get_s3_obj(is_lambda=False):
     """
@@ -38,13 +40,13 @@ def get_s3_obj(is_lambda=False):
     else:
         if os.path.exists(os.path.join(expanduser("~"), ".aws", "credentials")) or os.path.exists(
                 os.path.join(expanduser("~"), ".aws", "config")):
-            profile_name = raw_input("Enter your AWS profile name [default]: ") or "default"
+            profile_name = getInput("Enter your AWS profile name [default]: ") or "default" # modification: raw_input --> getInput
             session = boto3.Session(profile_name=profile_name)
             s3 = session.resource("s3")
             s3_client = session.client("s3")
         else:
-            access_key = raw_input("Enter your AWS access key ID: ")
-            secret_key = raw_input("Enter your AWS secret key: ")
+            access_key = getInput("Enter your AWS access key ID: ") # modification: raw_input --> getInput
+            secret_key = getInput("Enter your AWS secret key: ") # modification: raw_input --> getInput
             s3 = boto3.resource("s3", aws_access_key_id=access_key,
                                 aws_secret_access_key=secret_key)
             s3_client = boto3.client("s3", aws_access_key_id=access_key,
@@ -322,8 +324,9 @@ If you didn't enable it(when you created the account), then:
 
 
 def main():
-    if sys.version[0] == "3":
-        raw_input = input
+    # modification: for Python 2, use raw_input to get user's input 
+    if sys.version_info[:2] <= (2, 7):
+        getInput = raw_input    
     packages = ["boto3", "botocore", "termcolor", "requests"]
     for package in packages:
         install_and_import(package)
