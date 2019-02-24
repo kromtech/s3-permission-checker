@@ -138,6 +138,23 @@ def scan_bucket_urls(bucket_name):
     return access_urls
 
 
+def scan_bucket_tags(bucket_name, s3_client):
+    """
+    Scans standard bucket tags.
+
+    :param bucket_name: Name of the bucket.
+    :param s3_client: s3_client instance.
+    :return: List that contains tags.
+    """
+    tags = []
+    try:
+        response = s3_client.get_bucket_tagging(Bucket=bucket_name)
+        tags = response['TagSet']
+    except botocore.exceptions.ClientError:
+        pass
+    return tags
+
+
 def add_to_output(msg, path):
     """
     Displays msg or writes it to file.
@@ -203,6 +220,14 @@ def analyze_buckets(s3, s3_client, report_path=None):
                     add_to_output("\n".join(urls), report_path)
                 else:
                     add_to_output("Nothing found", report_path)
+                tags = scan_bucket_tags(bucket.name, s3_client)
+                add_to_output("Tags:", report_path)
+                if tags:
+                    for tag in tags:
+                        msg = "{} = {}".format(tag['Key'], tag['Value'])
+                        add_to_output(msg, report_path)
+                else:
+                    add_to_output("None found", report_path)
             else:
                 if report_path:
                     msg = "Bucket {}: {}".format(bucket.name, "Not public")
