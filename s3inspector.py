@@ -322,6 +322,7 @@ If you didn't enable it(when you created the account), then:
 
 
 def main():
+    global raw_input
     if sys.version[0] == "3":
         raw_input = input
     packages = ["boto3", "botocore", "termcolor", "requests"]
