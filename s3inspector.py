@@ -38,13 +38,13 @@ def get_s3_obj(is_lambda=False):
     else:
         if os.path.exists(os.path.join(expanduser("~"), ".aws", "credentials")) or os.path.exists(
                 os.path.join(expanduser("~"), ".aws", "config")):
-            profile_name = raw_input("Enter your AWS profile name [default]: ") or "default"
+            profile_name = input("Enter your AWS profile name [default]: ") or "default"
             session = boto3.Session(profile_name=profile_name)
             s3 = session.resource("s3")
             s3_client = session.client("s3")
         else:
-            access_key = raw_input("Enter your AWS access key ID: ")
-            secret_key = raw_input("Enter your AWS secret key: ")
+            access_key = input("Enter your AWS access key ID: ")
+            secret_key = input("Enter your AWS secret key: ")
             s3 = boto3.resource("s3", aws_access_key_id=access_key,
                                 aws_secret_access_key=secret_key)
             s3_client = boto3.client("s3", aws_access_key_id=access_key,
@@ -78,6 +78,60 @@ def check_acl(acl):
             dangerous_grants[grantee["URI"]].append(grant["Permission"])
     public_indicator = True if dangerous_grants else False
     return public_indicator, dangerous_grants
+
+def check_public_access_block(bucket_name, s3_client):
+    """
+    Checks if block public access option is set
+
+    :param bucket_name: Name of the bucket.
+    :param s3_client: s3_client instance.
+    :return: Boolean true if public access is blocked.
+    """
+    try:
+        public_access_block_conf = s3_client.get_public_access_block(Bucket=bucket_name)['PublicAccessBlockConfiguration']
+        return public_access_block_conf['BlockPublicAcls'] and \
+            public_access_block_conf['IgnorePublicAcls'] and \
+            public_access_block_conf['BlockPublicPolicy'] and \
+            public_access_block_conf['RestrictPublicBuckets']
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "NoSuchPublicAccessBlockConfiguration":
+            return False
+        else:
+            return False
+
+def check_public_access_policy(bucket_name, s3_client):
+    """
+    Checks if block public access option is set
+
+    :param bucket_name: Name of the bucket.
+    :param s3_client: s3_client instance.
+    :return: Boolean true if public access is configured.
+    """
+    try:
+        return s3_client.get_bucket_policy_status(Bucket=bucket_name)['PolicyStatus']['IsPublic']
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "NoSuchBucketPolicy":
+            return False
+        else:
+            return False
+
+def check_encryption(bucket_name, s3_client):
+    """
+    Checks bucket default encryption is present
+
+    :param bucket_name: Name of the bucket.
+    :param s3_client: s3_client instance.
+    :return: String with default encryption algorithm if exists.
+    """
+    try:
+        return s3_client.get_bucket_encryption(Bucket=bucket_name)\
+            ['ServerSideEncryptionConfiguration']['Rules'][0]\
+            ['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "ServerSideEncryptionConfigurationNotFoundError":
+            return "Not Encrypted by default"
+        else:
+            return "N/A"
 
 
 def get_location(bucket_name, s3_client):
@@ -168,9 +222,13 @@ def analyze_buckets(s3, s3_client, report_path=None):
             location = get_location(bucket.name, s3_client)
             add_to_output(SEP, report_path)
             bucket_acl = bucket.Acl()
+            encryption_algo = check_encryption(bucket.name, s3_client)
             public, grants = check_acl(bucket_acl)
+            public_access_blocked = check_public_access_block(bucket.name, s3_client)
+            public_by_policy = check_public_access_policy(bucket.name, s3_client)
 
-            if public:
+
+            if public or public_by_policy and not public_access_blocked:
                 if report_path:
                     msg = "Bucket {}: {}".format(bucket.name, "PUBLIC!")
                 else:
@@ -182,6 +240,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
                 add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Default Encryption: {}".format(encryption_algo), report_path)
 
                 if grants:
                     for grant in grants:
@@ -215,6 +274,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
                 add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Default Encryption: {}".format(encryption_algo), report_path)
             bucketcount += 1
         if not bucketcount:
             add_to_output("No buckets found", report_path)
