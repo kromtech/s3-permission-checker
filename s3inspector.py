@@ -38,13 +38,13 @@ def get_s3_obj(is_lambda=False):
     else:
         if os.path.exists(os.path.join(expanduser("~"), ".aws", "credentials")) or os.path.exists(
                 os.path.join(expanduser("~"), ".aws", "config")):
-            profile_name = raw_input("Enter your AWS profile name [default]: ") or "default"
+            profile_name = input("Enter your AWS profile name [default]: ") or "default"
             session = boto3.Session(profile_name=profile_name)
             s3 = session.resource("s3")
             s3_client = session.client("s3")
         else:
-            access_key = raw_input("Enter your AWS access key ID: ")
-            secret_key = raw_input("Enter your AWS secret key: ")
+            access_key = input("Enter your AWS access key ID: ")
+            secret_key = input("Enter your AWS secret key: ")
             s3 = boto3.resource("s3", aws_access_key_id=access_key,
                                 aws_secret_access_key=secret_key)
             s3_client = boto3.client("s3", aws_access_key_id=access_key,
