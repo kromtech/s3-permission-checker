@@ -79,6 +79,24 @@ def check_acl(acl):
     public_indicator = True if dangerous_grants else False
     return public_indicator, dangerous_grants
 
+def check_encryption(bucket_name, s3_client):
+    """
+    Checks bucket default encryption is present
+
+    :param bucket_name: Name of the bucket.
+    :param s3_client: s3_client instance.
+    :return: String with default encryption algorithm if exists.
+    """
+    try:
+        return s3_client.get_bucket_encryption(Bucket=bucket_name)\
+            ['ServerSideEncryptionConfiguration']['Rules'][0]\
+            ['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "ServerSideEncryptionConfigurationNotFoundError":
+            return "Not Encrypted by default"
+        else:
+            return "N/A"
+
 
 def get_location(bucket_name, s3_client):
     """
@@ -168,6 +186,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
             location = get_location(bucket.name, s3_client)
             add_to_output(SEP, report_path)
             bucket_acl = bucket.Acl()
+            encryption_algo = check_encryption(bucket.name, s3_client)
             public, grants = check_acl(bucket_acl)
 
             if public:
@@ -182,6 +201,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
                 add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Default Encryption: {}".format(encryption_algo), report_path)
 
                 if grants:
                     for grant in grants:
@@ -215,6 +235,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
                 add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Default Encryption: {}".format(encryption_algo), report_path)
             bucketcount += 1
         if not bucketcount:
             add_to_output("No buckets found", report_path)
