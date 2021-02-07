@@ -1,11 +1,12 @@
 import os
 import re
-import sys
 import warnings
 
 from datetime import datetime, timedelta
 from os.path import expanduser
 from collections import defaultdict
+from builtins import input
+
 
 # ENTER VALID SNS RESOURCE ARN IF YOU WANT TO USE CODE AS LAMBDA.
 SNS_RESOURCE_ARN = "******************************************************"
@@ -38,13 +39,13 @@ def get_s3_obj(is_lambda=False):
     else:
         if os.path.exists(os.path.join(expanduser("~"), ".aws", "credentials")) or os.path.exists(
                 os.path.join(expanduser("~"), ".aws", "config")):
-            profile_name = raw_input("Enter your AWS profile name [default]: ") or "default"
+            profile_name = input("Enter your AWS profile name [default]: ") or "default"
             session = boto3.Session(profile_name=profile_name)
             s3 = session.resource("s3")
             s3_client = session.client("s3")
         else:
-            access_key = raw_input("Enter your AWS access key ID: ")
-            secret_key = raw_input("Enter your AWS secret key: ")
+            access_key = input("Enter your AWS access key ID: ")
+            secret_key = input("Enter your AWS secret key: ")
             s3 = boto3.resource("s3", aws_access_key_id=access_key,
                                 aws_secret_access_key=secret_key)
             s3_client = boto3.client("s3", aws_access_key_id=access_key,
@@ -80,7 +81,7 @@ def check_acl(acl):
     return public_indicator, dangerous_grants
 
 
-def get_location(bucket_name, s3_client):
+def get_bucket_region(bucket_name, s3_client):
     """
     Returns the bucket location.
 
@@ -88,11 +89,11 @@ def get_location(bucket_name, s3_client):
     :param s3_client: s3_client instance.
     :return: String with bucket's region.
     """
-    loc = s3_client.get_bucket_location(
+    region = s3_client.get_bucket_location(
             Bucket=bucket_name)["LocationConstraint"]
-    if loc is None:
-        loc = "None(probably Northern Virginia)"
-    return loc
+    if region is None:
+        region = "None(probably Northern Virginia)"
+    return region
 
 
 def install_and_import(pkg):
@@ -111,30 +112,42 @@ def install_and_import(pkg):
         globals()[pkg] = importlib.import_module(pkg)
 
 
-def scan_bucket_urls(bucket_name):
+def scan_bucket_urls(bucket_name, region):
     """
     Scans standard bucket urls.
     Returns only publicly accessible urls.
 
     :param bucket_name: Name of the bucket.
+    :param region: Region of bucket.
     :return: List that contains publicly accessible urls.
     """
-    domain = "s3.amazonaws.com"
     access_urls = []
-    urls_to_scan = [
-        "https://{}.{}".format(bucket_name, domain),
-        "http://{}.{}".format(bucket_name, domain),
-        "https://{}/{}".format(domain, bucket_name),
-        "http://{}/{}".format(domain, bucket_name)
-    ]
-    warnings.filterwarnings("ignore")
-    for url in urls_to_scan:
-        try:
-            content = requests.get(url).text
-        except requests.exceptions.SSLError:
-            continue
-        if not re.search("Access Denied", content):
-            access_urls.append(url)
+    files = []
+    domain = "s3.{}.amazonaws.com".format(region)
+    s3 = boto3.client("s3")
+
+    all_objects = s3.list_objects(Bucket=bucket_name)
+    for obj in all_objects['Contents']:
+        if not obj['Key'].endswith("/"):
+            files.append(obj['Key'])
+
+    for file in files:
+        urls_to_scan = [
+            "https://{}.{}".format(bucket_name, domain),
+            "http://{}.{}".format(bucket_name, domain),
+            "https://{}/{}".format(domain, bucket_name),
+            "http://{}/{}".format(domain, bucket_name)
+        ]
+        warnings.filterwarnings("ignore")
+        for url in urls_to_scan:
+            url = "{}/{}".format(url, file)
+            try:
+                content = requests.get(url).text
+            except requests.exceptions.SSLError:
+                continue
+            if not re.search("Access Denied", content):
+                access_urls.append(url)
+
     return access_urls
 
 
@@ -165,7 +178,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
         bucketcount = 0
 
         for bucket in buckets:
-            location = get_location(bucket.name, s3_client)
+            region = get_bucket_region(bucket.name, s3_client)
             add_to_output(SEP, report_path)
             bucket_acl = bucket.Acl()
             public, grants = check_acl(bucket_acl)
@@ -181,7 +194,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                     msg = "Bucket {}: {}".format(
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
-                add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Location: {}".format(region), report_path)
 
                 if grants:
                     for grant in grants:
@@ -197,7 +210,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                                             " & ".join(perm_to_print), "red"),
                                     termcolor.colored(GROUPS_TO_CHECK[grant], "red"))
                         add_to_output(msg, report_path)
-                urls = scan_bucket_urls(bucket.name)
+                urls = scan_bucket_urls(bucket.name, region)
                 add_to_output("URLs:", report_path)
                 if urls:
                     add_to_output("\n".join(urls), report_path)
@@ -214,7 +227,7 @@ def analyze_buckets(s3, s3_client, report_path=None):
                     msg = "Bucket {}: {}".format(
                             bucket_line, public_ind)
                 add_to_output(msg, report_path)
-                add_to_output("Location: {}".format(location), report_path)
+                add_to_output("Location: {}".format(region), report_path)
             bucketcount += 1
         if not bucketcount:
             add_to_output("No buckets found", report_path)
@@ -322,8 +335,6 @@ If you didn't enable it(when you created the account), then:
 
 
 def main():
-    if sys.version[0] == "3":
-        raw_input = input
     packages = ["boto3", "botocore", "termcolor", "requests"]
     for package in packages:
         install_and_import(package)
